@@ -59,6 +59,7 @@ test-electrum = ["electrum"]
 test-md-docs = ["electrum"]
 
 [dev-dependencies]
+anyhow = "1.0"
 bdk-testutils = "0.4"
 bdk-testutils-macros = "0.6"
 serial_test = "0.4"
