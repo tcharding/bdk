@@ -28,8 +28,6 @@ use std::io;
 use std::io::Read;
 use std::time::Duration;
 
-use futures::stream::{self, FuturesOrdered, StreamExt, TryStreamExt};
-
 #[allow(unused_imports)]
 use log::{debug, error, info, trace};
 
@@ -46,16 +44,12 @@ use self::utils::{ElectrumLikeSync, ElsGetHistoryRes};
 use super::*;
 use crate::database::BatchDatabase;
 use crate::error::Error;
-use crate::wallet::utils::ChunksIterator;
 use crate::FeeRate;
-
-const DEFAULT_CONCURRENT_REQUESTS: u8 = 4;
 
 #[derive(Debug)]
 struct UrlClient {
     url: String,
     agent: Agent,
-    concurrency: u8,
 }
 
 /// Structure that implements the logic to sync with Esplora
@@ -73,7 +67,7 @@ impl std::convert::From<UrlClient> for EsploraBlockchain {
 
 impl EsploraBlockchain {
     /// Create a new instance of the client from a base URL
-    pub fn new(base_url: &str, concurrency: Option<u8>) -> Self {
+    pub fn new(base_url: &str) -> Self {
         let agent: Agent = AgentBuilder::new()
             .timeout_read(Duration::from_secs(5))
             .timeout_write(Duration::from_secs(5))
@@ -82,7 +76,6 @@ impl EsploraBlockchain {
         EsploraBlockchain(UrlClient {
             url: base_url.to_string(),
             agent,
-            concurrency: concurrency.unwrap_or(DEFAULT_CONCURRENT_REQUESTS),
         })
     }
 }
@@ -338,66 +331,41 @@ fn into_bytes(resp: Response) -> Result<Vec<u8>, io::Error> {
     Ok(buf)
 }
 
-#[maybe_async]
 impl ElectrumLikeSync for UrlClient {
     fn els_batch_script_get_history<'s, I: IntoIterator<Item = &'s Script>>(
         &self,
         scripts: I,
     ) -> Result<Vec<Vec<ElsGetHistoryRes>>, Error> {
-        let future = async {
-            let mut results = vec![];
-            for chunk in ChunksIterator::new(scripts.into_iter(), self.concurrency as usize) {
-                let mut futs = FuturesOrdered::new();
-                for script in chunk {
-                    futs.push(async move { self._script_get_history(&script) })
-                }
-                let partial_results: Vec<Vec<ElsGetHistoryRes>> = futs.try_collect().await?;
-                results.extend(partial_results);
-            }
-            Ok(stream::iter(results).collect().await)
-        };
-
-        await_or_block!(future)
+        let mut results = vec![];
+        for script in scripts.into_iter() {
+            let v = self._script_get_history(&script)?;
+            results.push(v);
+        }
+        Ok(results)
     }
 
     fn els_batch_transaction_get<'s, I: IntoIterator<Item = &'s Txid>>(
         &self,
         txids: I,
     ) -> Result<Vec<Transaction>, Error> {
-        let future = async {
-            let mut results = vec![];
-            for chunk in ChunksIterator::new(txids.into_iter(), self.concurrency as usize) {
-                let mut futs = FuturesOrdered::new();
-                for txid in chunk {
-                    futs.push(async move { self._get_tx_no_opt(&txid) })
-                }
-                let partial_results: Vec<Transaction> = futs.try_collect().await?;
-                results.extend(partial_results);
-            }
-            Ok(stream::iter(results).collect().await)
-        };
-
-        await_or_block!(future)
+        let mut results = vec![];
+        for txid in txids.into_iter() {
+            let tx = self._get_tx_no_opt(&txid)?;
+            results.push(tx);
+        }
+        Ok(results)
     }
 
     fn els_batch_block_header<I: IntoIterator<Item = u32>>(
         &self,
         heights: I,
     ) -> Result<Vec<BlockHeader>, Error> {
-        let future = async {
-            let mut results = vec![];
-            for chunk in ChunksIterator::new(heights.into_iter(), self.concurrency as usize) {
-                let mut futs = FuturesOrdered::new();
-                for height in chunk {
-                    futs.push(async move { self._get_header(height) });
-                }
-                let partial_results: Vec<BlockHeader> = futs.try_collect().await?;
-                results.extend(partial_results);
-            }
-            Ok(stream::iter(results).collect().await)
-        };
-
-        await_or_block!(future)
+        let mut results = vec![];
+        for height in heights.into_iter() {
+            let header = self._get_header(height)?;
+            results.push(header);
+        }
+        Ok(results)
     }
 }
 
@@ -427,10 +395,7 @@ impl ConfigurableBlockchain for EsploraBlockchain {
     type Config = EsploraBlockchainConfig;
 
     fn from_config(config: &Self::Config) -> Result<Self, Error> {
-        Ok(EsploraBlockchain::new(
-            config.base_url.as_str(),
-            config.concurrency,
-        ))
+        Ok(EsploraBlockchain::new(config.base_url.as_str()))
     }
 }
 
