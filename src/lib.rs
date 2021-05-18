@@ -223,7 +223,7 @@ extern crate lazy_static;
 pub extern crate electrum_client;
 
 #[cfg(feature = "esplora")]
-pub extern crate reqwest;
+pub extern crate ureq;
 
 #[cfg(feature = "key-value-db")]
 pub extern crate sled;
