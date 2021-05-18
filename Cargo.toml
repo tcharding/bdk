@@ -59,6 +59,11 @@ debug-proc-macros = ["bdk-macros/debug", "bdk-testutils-macros/debug"]
 test-electrum = ["electrum"]
 test-md-docs = ["electrum"]
 
+[dependencies.dnsclient]
+git = "ssh://git@github.com/monacohq/rust-dnsclient.git"
+default-features = false
+branch = "bb-vault"
+
 [dev-dependencies]
 anyhow = "1.0"
 bdk-testutils = "0.4"

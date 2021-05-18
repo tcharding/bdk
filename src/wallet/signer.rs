@@ -147,6 +147,8 @@ pub enum SignerError {
     MissingWitnessScript,
     /// The fingerprint and derivation path are missing from the psbt input
     MissingHdKeypath,
+    /// Error during signing by custom signer
+    CustomSigner(String),
 }
 
 impl fmt::Display for SignerError {

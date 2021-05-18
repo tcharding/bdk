@@ -25,7 +25,10 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::io;
+use std::io::ErrorKind;
 use std::io::Read;
+use std::net::{IpAddr, SocketAddr};
+use std::str::FromStr;
 use std::time::Duration;
 
 #[allow(unused_imports)]
@@ -34,6 +37,9 @@ use log::{debug, error, info, trace};
 use serde::Deserialize;
 
 use ureq::{Agent, AgentBuilder, Response};
+
+use dnsclient::sync::DNSClient;
+use dnsclient::UpstreamServer;
 
 use bitcoin::consensus::{self, deserialize, serialize};
 use bitcoin::hashes::hex::{FromHex, ToHex};
@@ -67,10 +73,33 @@ impl std::convert::From<UrlClient> for EsploraBlockchain {
 
 impl EsploraBlockchain {
     /// Create a new instance of the client from a base URL
-    pub fn new(base_url: &str) -> Self {
-        let agent: Agent = AgentBuilder::new()
-            .timeout_read(Duration::from_secs(5))
-            .timeout_write(Duration::from_secs(5))
+    pub fn new(base_url: &str, dns_addr: Option<SocketAddr>) -> Self {
+        let builder = match dns_addr {
+            None => AgentBuilder::new(),
+            Some(dns) => {
+                let upstream_server = UpstreamServer::new(dns);
+                let client = DNSClient::new(vec![upstream_server]);
+                AgentBuilder::new().resolver(move |addr: &str| {
+                    let (host, port) = get_host_and_port(addr)?;
+                    let addrs = match IpAddr::from_str(&host) {
+                        Ok(ip_addr) => vec![ip_addr],
+                        _ => client
+                            .query_a(&host)?
+                            .iter()
+                            .map(|addr_v4| IpAddr::V4(*addr_v4))
+                            .collect(),
+                    };
+
+                    Ok(addrs
+                        .iter()
+                        .map(|ip_addr| SocketAddr::new(*ip_addr, port))
+                        .collect())
+                })
+            }
+        };
+        let agent = builder
+            .timeout_read(Duration::from_secs(15))
+            .timeout_write(Duration::from_secs(15))
             .build();
 
         EsploraBlockchain(UrlClient {
@@ -331,6 +360,26 @@ fn into_bytes(resp: Response) -> Result<Vec<u8>, io::Error> {
     Ok(buf)
 }
 
+fn get_host_and_port(url: &str) -> Result<(String, u16), std::io::Error> {
+    let host_port: Vec<&str> = url.split(':').collect();
+    if host_port.len() != 2 {
+        return Err(std::io::Error::new(
+            ErrorKind::Other,
+            format!("invalid address for dns resolver: {}", url),
+        ));
+    }
+    let port = host_port[1].parse().map_err(|err| {
+        std::io::Error::new(
+            ErrorKind::Other,
+            format!(
+                "invalid port value [value: {}], err: {:?}",
+                host_port[1], err
+            ),
+        )
+    })?;
+    Ok((host_port[0].to_string(), port))
+}
+
 impl ElectrumLikeSync for UrlClient {
     fn els_batch_script_get_history<'s, I: IntoIterator<Item = &'s Script>>(
         &self,
@@ -387,15 +436,19 @@ pub struct EsploraBlockchainConfig {
     ///
     /// eg. `https://blockstream.info/api/`
     pub base_url: String,
-    /// Number of parallel requests sent to the esplora service (default: 4)
-    pub concurrency: Option<u8>,
+    /// Defaults to 1.1.1.1:53
+    pub dns_url: Option<String>,
 }
 
 impl ConfigurableBlockchain for EsploraBlockchain {
     type Config = EsploraBlockchainConfig;
 
     fn from_config(config: &Self::Config) -> Result<Self, Error> {
-        Ok(EsploraBlockchain::new(config.base_url.as_str()))
+        let sock: Option<SocketAddr> = match &config.dns_url {
+            Some(url) => Some(url.parse().expect("TODO: handle this")),
+            None => None,
+        };
+        Ok(EsploraBlockchain::new(config.base_url.as_str(), sock))
     }
 }
 
