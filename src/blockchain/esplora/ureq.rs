@@ -9,7 +9,7 @@
 // You may not use this file except in accordance with one or both of these
 // licenses.
 
-//! Esplora
+//! This module is based on `./esplora.rs`, it uses `ureq` as the HTTP client and is never `async`.
 //!
 //! This module defines a [`Blockchain`] struct that can query an Esplora backend
 //! populate the wallet's [database](crate::database::Database) by
@@ -24,37 +24,32 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fmt;
-
-use futures::stream::{self, FuturesOrdered, StreamExt, TryStreamExt};
+use std::io;
+use std::io::Read;
+use std::time::Duration;
 
 #[allow(unused_imports)]
 use log::{debug, error, info, trace};
 
 use serde::Deserialize;
 
-use reqwest::{Client, StatusCode};
+use ureq::{Agent, Response};
 
 use bitcoin::consensus::{self, deserialize, serialize};
 use bitcoin::hashes::hex::{FromHex, ToHex};
 use bitcoin::hashes::{sha256, Hash};
 use bitcoin::{BlockHash, BlockHeader, Script, Transaction, Txid};
 
-use self::utils::{ElectrumLikeSync, ElsGetHistoryRes};
-use super::*;
+use crate::blockchain::utils::{ElectrumLikeSync, ElsGetHistoryRes};
+use crate::blockchain::*;
 use crate::database::BatchDatabase;
 use crate::error::Error;
-use crate::wallet::utils::ChunksIterator;
 use crate::FeeRate;
-
-const DEFAULT_CONCURRENT_REQUESTS: u8 = 4;
 
 #[derive(Debug)]
 struct UrlClient {
     url: String,
-    // We use the async client instead of the blocking one because it automatically uses `fetch`
-    // when the target platform is wasm32.
-    client: Client,
-    concurrency: u8,
+    agent: Agent,
 }
 
 /// Structure that implements the logic to sync with Esplora
@@ -72,16 +67,14 @@ impl std::convert::From<UrlClient> for EsploraBlockchain {
 
 impl EsploraBlockchain {
     /// Create a new instance of the client from a base URL
-    pub fn new(base_url: &str, concurrency: Option<u8>) -> Self {
+    pub fn new(base_url: &str, agent: Agent) -> Self {
         EsploraBlockchain(UrlClient {
             url: base_url.to_string(),
-            client: Client::new(),
-            concurrency: concurrency.unwrap_or(DEFAULT_CONCURRENT_REQUESTS),
+            agent,
         })
     }
 }
 
-#[maybe_async]
 impl Blockchain for EsploraBlockchain {
     fn get_capabilities(&self) -> HashSet<Capability> {
         vec![
@@ -99,25 +92,25 @@ impl Blockchain for EsploraBlockchain {
         database: &mut D,
         progress_update: P,
     ) -> Result<(), Error> {
-        maybe_await!(self
-            .0
-            .electrum_like_setup(stop_gap, database, progress_update))
+        self.0
+            .electrum_like_setup(stop_gap, database, progress_update)
     }
 
     fn get_tx(&self, txid: &Txid) -> Result<Option<Transaction>, Error> {
-        Ok(await_or_block!(self.0._get_tx(txid))?)
+        Ok(self.0._get_tx(txid)?)
     }
 
     fn broadcast(&self, tx: &Transaction) -> Result<(), Error> {
-        Ok(await_or_block!(self.0._broadcast(tx))?)
+        let _txid = self.0._broadcast(tx)?;
+        Ok(())
     }
 
     fn get_height(&self) -> Result<u32, Error> {
-        Ok(await_or_block!(self.0._get_height())?)
+        Ok(self.0._get_height()?)
     }
 
     fn estimate_fee(&self, target: usize) -> Result<FeeRate, Error> {
-        let estimates = await_or_block!(self.0._get_fee_estimates())?;
+        let estimates = self.0._get_fee_estimates()?;
 
         let fee_val = estimates
             .into_iter()
@@ -139,99 +132,112 @@ impl UrlClient {
         sha256::Hash::hash(script.as_bytes()).into_inner().to_hex()
     }
 
-    async fn _get_tx(&self, txid: &Txid) -> Result<Option<Transaction>, EsploraError> {
+    fn _get_tx(&self, txid: &Txid) -> Result<Option<Transaction>, EsploraError> {
         let resp = self
-            .client
+            .agent
             .get(&format!("{}/tx/{}/raw", self.url, txid))
-            .send()
-            .await?;
+            .call();
 
-        if let StatusCode::NOT_FOUND = resp.status() {
-            return Ok(None);
+        match resp {
+            Ok(resp) => Ok(Some(deserialize(&into_bytes(resp)?)?)),
+            Err(ureq::Error::Status(code, _)) => {
+                if is_status_not_found(code) {
+                    return Ok(None);
+                }
+                Err(EsploraError::HttpResponse(code))
+            }
+            Err(e) => Err(EsploraError::Ureq(e)),
         }
-
-        Ok(Some(deserialize(&resp.error_for_status()?.bytes().await?)?))
     }
 
-    async fn _get_tx_no_opt(&self, txid: &Txid) -> Result<Transaction, EsploraError> {
-        match self._get_tx(txid).await {
+    fn _get_tx_no_opt(&self, txid: &Txid) -> Result<Transaction, EsploraError> {
+        match self._get_tx(txid) {
             Ok(Some(tx)) => Ok(tx),
             Ok(None) => Err(EsploraError::TransactionNotFound(*txid)),
             Err(e) => Err(e),
         }
     }
 
-    async fn _get_header(&self, block_height: u32) -> Result<BlockHeader, EsploraError> {
+    fn _get_header(&self, block_height: u32) -> Result<BlockHeader, EsploraError> {
         let resp = self
-            .client
+            .agent
             .get(&format!("{}/block-height/{}", self.url, block_height))
-            .send()
-            .await?;
+            .call();
 
-        if let StatusCode::NOT_FOUND = resp.status() {
-            return Err(EsploraError::HeaderHeightNotFound(block_height));
-        }
-        let bytes = resp.bytes().await?;
+        let bytes = match resp {
+            Ok(resp) => Ok(into_bytes(resp)?),
+            Err(ureq::Error::Status(code, _)) => Err(EsploraError::HttpResponse(code)),
+            Err(e) => Err(EsploraError::Ureq(e)),
+        }?;
+
         let hash = std::str::from_utf8(&bytes)
             .map_err(|_| EsploraError::HeaderHeightNotFound(block_height))?;
 
         let resp = self
-            .client
+            .agent
             .get(&format!("{}/block/{}/header", self.url, hash))
-            .send()
-            .await?;
+            .call();
 
-        let header = deserialize(&Vec::from_hex(&resp.text().await?)?)?;
-
-        Ok(header)
+        match resp {
+            Ok(resp) => Ok(deserialize(&Vec::from_hex(&resp.into_string()?)?)?),
+            Err(ureq::Error::Status(code, _)) => Err(EsploraError::HttpResponse(code)),
+            Err(e) => Err(EsploraError::Ureq(e)),
+        }
     }
 
-    async fn _broadcast(&self, transaction: &Transaction) -> Result<(), EsploraError> {
-        self.client
+    fn _broadcast(&self, transaction: &Transaction) -> Result<(), EsploraError> {
+        let resp = self
+            .agent
             .post(&format!("{}/tx", self.url))
-            .body(serialize(transaction).to_hex())
-            .send()
-            .await?
-            .error_for_status()?;
+            .send_string(&serialize(transaction).to_hex());
 
-        Ok(())
+        match resp {
+            Ok(_) => Ok(()), // We do not return the txid?
+            Err(ureq::Error::Status(code, _)) => Err(EsploraError::HttpResponse(code)),
+            Err(e) => Err(EsploraError::Ureq(e)),
+        }
     }
 
-    async fn _get_height(&self) -> Result<u32, EsploraError> {
-        let req = self
-            .client
+    fn _get_height(&self) -> Result<u32, EsploraError> {
+        let resp = self
+            .agent
             .get(&format!("{}/blocks/tip/height", self.url))
-            .send()
-            .await?;
+            .call();
 
-        Ok(req.error_for_status()?.text().await?.parse()?)
+        match resp {
+            Ok(resp) => Ok(resp.into_string()?.parse()?),
+            Err(ureq::Error::Status(code, _)) => Err(EsploraError::HttpResponse(code)),
+            Err(e) => Err(EsploraError::Ureq(e)),
+        }
     }
 
-    async fn _script_get_history(
-        &self,
-        script: &Script,
-    ) -> Result<Vec<ElsGetHistoryRes>, EsploraError> {
+    fn _script_get_history(&self, script: &Script) -> Result<Vec<ElsGetHistoryRes>, EsploraError> {
         let mut result = Vec::new();
         let scripthash = Self::script_to_scripthash(script);
 
         // Add the unconfirmed transactions first
-        result.extend(
-            self.client
-                .get(&format!(
-                    "{}/scripthash/{}/txs/mempool",
-                    self.url, scripthash
-                ))
-                .send()
-                .await?
-                .error_for_status()?
-                .json::<Vec<EsploraGetHistory>>()
-                .await?
-                .into_iter()
-                .map(|x| ElsGetHistoryRes {
-                    tx_hash: x.txid,
-                    height: x.status.block_height.unwrap_or(0) as i32,
-                }),
-        );
+
+        let resp = self
+            .agent
+            .get(&format!(
+                "{}/scripthash/{}/txs/mempool",
+                self.url, scripthash
+            ))
+            .call();
+
+        let v = match resp {
+            Ok(resp) => {
+                let v: Vec<EsploraGetHistory> = resp.into_json()?;
+                Ok(v)
+            }
+            Err(ureq::Error::Status(code, _)) => Err(EsploraError::HttpResponse(code)),
+            Err(e) => Err(EsploraError::Ureq(e)),
+        }?;
+
+        result.extend(v.into_iter().map(|x| ElsGetHistoryRes {
+            tx_hash: x.txid,
+            height: x.status.block_height.unwrap_or(0) as i32,
+        }));
 
         debug!(
             "Found {} mempool txs for {} - {:?}",
@@ -243,25 +249,31 @@ impl UrlClient {
         // Then go through all the pages of confirmed transactions
         let mut last_txid = String::new();
         loop {
-            let response = self
-                .client
+            let resp = self
+                .agent
                 .get(&format!(
                     "{}/scripthash/{}/txs/chain/{}",
                     self.url, scripthash, last_txid
                 ))
-                .send()
-                .await?
-                .error_for_status()?
-                .json::<Vec<EsploraGetHistory>>()
-                .await?;
-            let len = response.len();
-            if let Some(elem) = response.last() {
+                .call();
+
+            let v = match resp {
+                Ok(resp) => {
+                    let v: Vec<EsploraGetHistory> = resp.into_json()?;
+                    Ok(v)
+                }
+                Err(ureq::Error::Status(code, _)) => Err(EsploraError::HttpResponse(code)),
+                Err(e) => Err(EsploraError::Ureq(e)),
+            }?;
+
+            let len = v.len();
+            if let Some(elem) = v.last() {
                 last_txid = elem.txid.to_hex();
             }
 
             debug!("... adding {} confirmed transactions", len);
 
-            result.extend(response.into_iter().map(|x| ElsGetHistoryRes {
+            result.extend(v.into_iter().map(|x| ElsGetHistoryRes {
                 tx_hash: x.txid,
                 height: x.status.block_height.unwrap_or(0) as i32,
             }));
@@ -274,78 +286,81 @@ impl UrlClient {
         Ok(result)
     }
 
-    async fn _get_fee_estimates(&self) -> Result<HashMap<String, f64>, EsploraError> {
-        Ok(self
-            .client
+    fn _get_fee_estimates(&self) -> Result<HashMap<String, f64>, EsploraError> {
+        let resp = self
+            .agent
             .get(&format!("{}/fee-estimates", self.url,))
-            .send()
-            .await?
-            .error_for_status()?
-            .json::<HashMap<String, f64>>()
-            .await?)
+            .call();
+
+        let map = match resp {
+            Ok(resp) => {
+                let map: HashMap<String, f64> = resp.into_json()?;
+                Ok(map)
+            }
+            Err(ureq::Error::Status(code, _)) => Err(EsploraError::HttpResponse(code)),
+            Err(e) => Err(EsploraError::Ureq(e)),
+        }?;
+
+        Ok(map)
     }
 }
 
-#[maybe_async]
+fn is_status_not_found(status: u16) -> bool {
+    status == 404
+}
+
+fn into_bytes(resp: Response) -> Result<Vec<u8>, io::Error> {
+    const BYTES_LIMIT: usize = 10 * 1_024 * 1_024;
+
+    let mut buf: Vec<u8> = vec![];
+    resp.into_reader()
+        .take((BYTES_LIMIT + 1) as u64)
+        .read_to_end(&mut buf)?;
+    if buf.len() > BYTES_LIMIT {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            "response too big for into_bytes",
+        ));
+    }
+
+    Ok(buf)
+}
+
 impl ElectrumLikeSync for UrlClient {
     fn els_batch_script_get_history<'s, I: IntoIterator<Item = &'s Script>>(
         &self,
         scripts: I,
     ) -> Result<Vec<Vec<ElsGetHistoryRes>>, Error> {
-        let future = async {
-            let mut results = vec![];
-            for chunk in ChunksIterator::new(scripts.into_iter(), self.concurrency as usize) {
-                let mut futs = FuturesOrdered::new();
-                for script in chunk {
-                    futs.push(self._script_get_history(&script));
-                }
-                let partial_results: Vec<Vec<ElsGetHistoryRes>> = futs.try_collect().await?;
-                results.extend(partial_results);
-            }
-            Ok(stream::iter(results).collect().await)
-        };
-
-        await_or_block!(future)
+        let mut results = vec![];
+        for script in scripts.into_iter() {
+            let v = self._script_get_history(&script)?;
+            results.push(v);
+        }
+        Ok(results)
     }
 
     fn els_batch_transaction_get<'s, I: IntoIterator<Item = &'s Txid>>(
         &self,
         txids: I,
     ) -> Result<Vec<Transaction>, Error> {
-        let future = async {
-            let mut results = vec![];
-            for chunk in ChunksIterator::new(txids.into_iter(), self.concurrency as usize) {
-                let mut futs = FuturesOrdered::new();
-                for txid in chunk {
-                    futs.push(self._get_tx_no_opt(&txid));
-                }
-                let partial_results: Vec<Transaction> = futs.try_collect().await?;
-                results.extend(partial_results);
-            }
-            Ok(stream::iter(results).collect().await)
-        };
-
-        await_or_block!(future)
+        let mut results = vec![];
+        for txid in txids.into_iter() {
+            let tx = self._get_tx_no_opt(&txid)?;
+            results.push(tx);
+        }
+        Ok(results)
     }
 
     fn els_batch_block_header<I: IntoIterator<Item = u32>>(
         &self,
         heights: I,
     ) -> Result<Vec<BlockHeader>, Error> {
-        let future = async {
-            let mut results = vec![];
-            for chunk in ChunksIterator::new(heights.into_iter(), self.concurrency as usize) {
-                let mut futs = FuturesOrdered::new();
-                for height in chunk {
-                    futs.push(self._get_header(height));
-                }
-                let partial_results: Vec<BlockHeader> = futs.try_collect().await?;
-                results.extend(partial_results);
-            }
-            Ok(stream::iter(results).collect().await)
-        };
-
-        await_or_block!(future)
+        let mut results = vec![];
+        for height in heights.into_iter() {
+            let header = self._get_header(height)?;
+            results.push(header);
+        }
+        Ok(results)
     }
 }
 
@@ -363,30 +378,39 @@ struct EsploraGetHistory {
 /// Configuration for an [`EsploraBlockchain`]
 #[derive(Debug, serde::Deserialize, serde::Serialize, Clone, PartialEq)]
 pub struct EsploraBlockchainConfig {
-    /// Base URL of the esplora service
-    ///
-    /// eg. `https://blockstream.info/api/`
+    /// Base URL of the esplora service eg. `https://blockstream.info/api/`
     pub base_url: String,
-    /// Number of parallel requests sent to the esplora service (default: 4)
-    pub concurrency: Option<u8>,
+    /// Socket read timeout.
+    pub timeout_read: u64,
+    /// Socket write timeout.
+    pub timeout_write: u64,
 }
 
 impl ConfigurableBlockchain for EsploraBlockchain {
     type Config = EsploraBlockchainConfig;
 
     fn from_config(config: &Self::Config) -> Result<Self, Error> {
-        Ok(EsploraBlockchain::new(
-            config.base_url.as_str(),
-            config.concurrency,
-        ))
+        let agent: Agent = ureq::AgentBuilder::new()
+            .timeout_read(Duration::from_secs(config.timeout_read))
+            .timeout_write(Duration::from_secs(config.timeout_write))
+            .build();
+        Ok(EsploraBlockchain::new(config.base_url.as_str(), agent))
     }
 }
 
 /// Errors that can happen during a sync with [`EsploraBlockchain`]
 #[derive(Debug)]
 pub enum EsploraError {
-    /// Error with the HTTP call
-    Reqwest(reqwest::Error),
+    /// Error during ureq HTTP request
+    Ureq(ureq::Error),
+    /// Transport error during the ureq HTTP call
+    UreqTransport(ureq::Transport),
+    /// HTTP response error
+    HttpResponse(u16),
+    /// IO error during ureq response read
+    Io(io::Error),
+    /// No header found in ureq response
+    NoHeader,
     /// Invalid number returned
     Parsing(std::num::ParseIntError),
     /// Invalid Bitcoin data returned
@@ -410,14 +434,9 @@ impl fmt::Display for EsploraError {
 
 impl std::error::Error for EsploraError {}
 
-impl_error!(reqwest::Error, Reqwest, EsploraError);
+impl_error!(ureq::Error, Ureq, EsploraError);
+impl_error!(ureq::Transport, UreqTransport, EsploraError);
+impl_error!(io::Error, Io, EsploraError);
 impl_error!(std::num::ParseIntError, Parsing, EsploraError);
 impl_error!(consensus::encode::Error, BitcoinEncoding, EsploraError);
 impl_error!(bitcoin::hashes::hex::Error, Hex, EsploraError);
-
-#[cfg(feature = "test-blockchains")]
-crate::bdk_blockchain_tests! {
-    fn test_instance() -> EsploraBlockchain {
-        EsploraBlockchain::new(std::env::var("BDK_ESPLORA_URL").unwrap_or("127.0.0.1:3002".into()).as_str(), None)
-    }
-}
