@@ -110,7 +110,7 @@ fn after(key: &[u8]) -> Vec<u8> {
 /// [`database`]: crate::database
 #[derive(Debug, Default)]
 pub struct MemoryDatabase {
-    map: BTreeMap<Vec<u8>, Box<dyn std::any::Any>>,
+    map: BTreeMap<Vec<u8>, Box<dyn std::any::Any + Send>>,
     deleted_keys: Vec<Vec<u8>>,
 }
 
