@@ -1,3 +1,15 @@
+# Dogecoin fork of Bitcoin Dev Kit
+
+**Work In Progress**
+
+This repository was forked from [bdk](https://github.com/bitcoindevkit/bdk) in
+an effort to get bdk working with `dogecoind` and
+[doge-electrs](https://github.com/tcharding/doge-electrs)
+
+Only tested on testnet, use at your own risk.
+
+# ----- Original bdk README ------
+
 <div align="center">
   <h1>BDK</h1>
 
