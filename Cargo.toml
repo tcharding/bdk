@@ -14,15 +14,15 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 bdk-macros = "^0.4"
 log = "^0.4"
-miniscript = "5.1"
-bitcoin = { version = "~0.26.2", features = ["use-serde", "base64"] }
+miniscript = { version = "5.1", git = "http://github.com/tcharding/rust-miniscript", branch = "dogecoin" }
+bitcoin = { version = "~0.26.2", features = ["use-serde", "base64"], git = "http://github.com/tcharding/rust-bitcoin", branch = "dogecoin" }
 serde = { version = "^1.0", features = ["derive"] }
 serde_json = { version = "^1.0" }
 rand = "^0.7"
 
 # Optional dependencies
 sled = { version = "0.34", optional = true }
-electrum-client = { version = "0.7", optional = true }
+electrum-client = { version = "0.7", optional = true, git = "http://github.com/tcharding/rust-electrum-client", branch = "dogecoin" }
 reqwest = { version = "0.11", optional = true, features = ["json"] }
 futures = { version = "0.3", optional = true }
 async-trait = { version = "0.1", optional = true }
@@ -34,7 +34,7 @@ tiny-bip39 = { version = "^0.8", optional = true }
 bitcoinconsensus = { version = "0.19.0-3", optional = true }
 
 # Needed by bdk_blockchain_tests macro
-bitcoincore-rpc = { version = "0.13", optional = true }
+bitcoincore-rpc = { version = "0.13", optional = true, git = "http://github.com/tcharding/rust-bitcoincore-rpc", branch = "dogecoin" }
 
 # Platform-specific dependencies
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
