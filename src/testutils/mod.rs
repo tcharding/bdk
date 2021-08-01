@@ -108,7 +108,7 @@ macro_rules! testutils {
         let secp = Secp256k1::new();
 
         let parsed = Descriptor::<DescriptorPublicKey>::parse_descriptor(&secp, &$descriptors.0).expect("Failed to parse descriptor in `testutils!(@external)`").0;
-        parsed.derive_translated(&secp, $child).address(bitcoin::Network::Regtest).expect("No address form")
+        parsed.derive_translated(&secp, $child).address(bitcoin::Network::Regtest, bitcoin::Blockchain::Bitcoin).expect("No address form")
     });
     ( @internal $descriptors:expr, $child:expr ) => ({
         use bitcoin::secp256k1::Secp256k1;

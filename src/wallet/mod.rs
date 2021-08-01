@@ -92,6 +92,8 @@ pub struct Wallet<B, D> {
 
     network: Network,
 
+    blockchain: bitcoin::Blockchain,
+
     current_height: Option<u32>,
 
     client: B,
@@ -109,9 +111,18 @@ where
         descriptor: E,
         change_descriptor: Option<E>,
         network: Network,
+        blockchain: bitcoin::Blockchain,
         database: D,
     ) -> Result<Self, Error> {
-        Self::_new(descriptor, change_descriptor, network, database, (), None)
+        Self::_new(
+            descriptor,
+            change_descriptor,
+            network,
+            blockchain,
+            database,
+            (),
+            None,
+        )
     }
 }
 
@@ -123,6 +134,7 @@ where
         descriptor: E,
         change_descriptor: Option<E>,
         network: Network,
+        blockchain: bitcoin::Blockchain,
         mut database: D,
         client: B,
         current_height: Option<u32>,
@@ -161,6 +173,7 @@ where
             change_signers,
             address_validators: Vec::new(),
             network,
+            blockchain,
             current_height,
             client,
             database: RefCell::new(database),
@@ -236,7 +249,7 @@ where
         let address_result = self
             .descriptor
             .as_derived(incremented_index, &self.secp)
-            .address(self.network);
+            .address(self.network, self.blockchain);
 
         address_result
             .map(|address| AddressInfo {
@@ -253,7 +266,7 @@ where
 
         let derived_key = self.descriptor.as_derived(current_index, &self.secp);
 
-        let script_pubkey = derived_key.script_pubkey();
+        let script_pubkey = derived_key.script_pubkey(self.blockchain);
 
         let found_used = self
             .list_transactions(true)?
@@ -266,7 +279,7 @@ where
             self.get_new_address()
         } else {
             derived_key
-                .address(self.network)
+                .address(self.network, self.blockchain)
                 .map(|address| AddressInfo {
                     address,
                     index: current_index,
@@ -279,7 +292,7 @@ where
     fn peek_address(&self, index: u32) -> Result<AddressInfo, Error> {
         self.descriptor
             .as_derived(index, &self.secp)
-            .address(self.network)
+            .address(self.network, self.blockchain)
             .map(|address| AddressInfo { index, address })
             .map_err(|_| Error::ScriptDoesntHaveAddressForm)
     }
@@ -291,7 +304,7 @@ where
 
         self.descriptor
             .as_derived(index, &self.secp)
-            .address(self.network)
+            .address(self.network, self.blockchain)
             .map(|address| AddressInfo { index, address })
             .map_err(|_| Error::ScriptDoesntHaveAddressForm)
     }
@@ -994,11 +1007,17 @@ where
                         psbt_input,
                         psbt.get_utxo_for(n),
                         &self.secp,
+                        self.blockchain,
                     )
                 })
                 .or_else(|| {
                     self.change_descriptor.as_ref().and_then(|desc| {
-                        desc.derive_from_psbt_input(psbt_input, psbt.get_utxo_for(n), &self.secp)
+                        desc.derive_from_psbt_input(
+                            psbt_input,
+                            psbt.get_utxo_for(n),
+                            &self.secp,
+                            self.blockchain,
+                        )
                     })
                 });
 
@@ -1012,6 +1031,7 @@ where
                             After::new(current_height, false),
                             Older::new(current_height, create_height, false),
                         ),
+                        self.blockchain,
                     ) {
                         Ok(_) => {
                             let psbt_input = &mut psbt.inputs[n];
@@ -1073,7 +1093,9 @@ where
         let (desc, keychain) = self._get_descriptor_for_keychain(KeychainKind::Internal);
         let index = self.fetch_and_increment_index(keychain)?;
 
-        Ok(desc.as_derived(index, &self.secp).script_pubkey())
+        Ok(desc
+            .as_derived(index, &self.secp)
+            .script_pubkey(self.blockchain))
     }
 
     fn fetch_and_increment_index(&self, keychain: KeychainKind) -> Result<u32, Error> {
@@ -1095,7 +1117,7 @@ where
         let derived_descriptor = descriptor.as_derived(index, &self.secp);
 
         let hd_keypaths = derived_descriptor.get_hd_keypaths(&self.secp)?;
-        let script = derived_descriptor.script_pubkey();
+        let script = derived_descriptor.script_pubkey(self.blockchain);
 
         for validator in &self.address_validators {
             validator.validate(keychain, &hd_keypaths, &script)?;
@@ -1143,7 +1165,9 @@ where
         let start_time = time::Instant::new();
         for i in from..(from + count) {
             address_batch.set_script_pubkey(
-                &descriptor.as_derived(i, &self.secp).script_pubkey(),
+                &descriptor
+                    .as_derived(i, &self.secp)
+                    .script_pubkey(self.blockchain),
                 keychain,
                 i,
             )?;
@@ -1348,8 +1372,10 @@ where
 
                 psbt_output.bip32_derivation = derived_descriptor.get_hd_keypaths(&self.secp)?;
                 if params.include_output_redeem_witness_script {
-                    psbt_output.witness_script = derived_descriptor.psbt_witness_script();
-                    psbt_output.redeem_script = derived_descriptor.psbt_redeem_script();
+                    psbt_output.witness_script =
+                        derived_descriptor.psbt_witness_script(self.blockchain);
+                    psbt_output.redeem_script =
+                        derived_descriptor.psbt_redeem_script(self.blockchain);
                 };
             }
         }
@@ -1381,8 +1407,8 @@ where
         let derived_descriptor = desc.as_derived(child, &self.secp);
         psbt_input.bip32_derivation = derived_descriptor.get_hd_keypaths(&self.secp)?;
 
-        psbt_input.redeem_script = derived_descriptor.psbt_redeem_script();
-        psbt_input.witness_script = derived_descriptor.psbt_witness_script();
+        psbt_input.redeem_script = derived_descriptor.psbt_redeem_script(self.blockchain);
+        psbt_input.witness_script = derived_descriptor.psbt_witness_script(self.blockchain);
 
         let prev_output = utxo.outpoint;
         if let Some(prev_tx) = self.database.borrow().get_raw_tx(&prev_output.txid)? {
@@ -1437,6 +1463,7 @@ where
         descriptor: E,
         change_descriptor: Option<E>,
         network: Network,
+        blockchain: bitcoin::Blockchain,
         database: D,
         client: B,
     ) -> Result<Self, Error> {
@@ -1445,6 +1472,7 @@ where
             descriptor,
             change_descriptor,
             network,
+            blockchain,
             database,
             client,
             current_height,
@@ -1570,6 +1598,7 @@ pub(crate) mod test {
             "wpkh(L5EZftvrYaSudiozVRzTqLcHLNDoVn7H5HSfM9BAN6tMJX8oTWz6)",
             None,
             Network::Testnet,
+            bitcoin::Blockchain::Bitcoin,
             db,
         )
         .unwrap();
@@ -1600,7 +1629,7 @@ pub(crate) mod test {
     #[test]
     fn test_cache_addresses() {
         let db = MemoryDatabase::new();
-        let wallet = Wallet::new_offline("wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)", None, Network::Testnet, db).unwrap();
+        let wallet = Wallet::new_offline("wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)", None, Network::Testnet, bitcoin::Blockchain::Bitcoin, db).unwrap();
 
         assert_eq!(
             wallet.get_address(New).unwrap().to_string(),
@@ -1628,7 +1657,7 @@ pub(crate) mod test {
     #[test]
     fn test_cache_addresses_refill() {
         let db = MemoryDatabase::new();
-        let wallet = Wallet::new_offline("wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)", None, Network::Testnet, db).unwrap();
+        let wallet = Wallet::new_offline("wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)", None, Network::Testnet, bitcoin::Blockchain::Bitcoin, db).unwrap();
 
         assert_eq!(
             wallet.get_address(New).unwrap().to_string(),
@@ -1684,6 +1713,7 @@ pub(crate) mod test {
             &descriptors.0,
             None,
             Network::Regtest,
+            bitcoin::Blockchain::Bitcoin,
             MemoryDatabase::new(),
         )
         .unwrap();
@@ -3693,7 +3723,7 @@ pub(crate) mod test {
                     "wpkh(025476c2e83188368da1ff3e292e7acafcdb3566bb0ad253f62fc70f07aeee6357)",
                 )
                 .unwrap()
-                .script_pubkey(),
+                .script_pubkey(bitcoin::Blockchain::Bitcoin),
             }),
             ..Default::default()
         };
@@ -3771,7 +3801,7 @@ pub(crate) mod test {
     fn test_unused_address() {
         let db = MemoryDatabase::new();
         let wallet = Wallet::new_offline("wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)",
-                                         None, Network::Testnet, db).unwrap();
+                                         None, Network::Testnet, bitcoin::Blockchain::Bitcoin, db).unwrap();
 
         assert_eq!(
             wallet.get_address(LastUnused).unwrap().to_string(),
@@ -3791,6 +3821,7 @@ pub(crate) mod test {
             &descriptors.0,
             None,
             Network::Testnet,
+            bitcoin::Blockchain::Bitcoin,
             MemoryDatabase::new(),
         )
         .unwrap();
@@ -3817,7 +3848,7 @@ pub(crate) mod test {
     fn test_peek_address_at_index() {
         let db = MemoryDatabase::new();
         let wallet = Wallet::new_offline("wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)",
-                                         None, Network::Testnet, db).unwrap();
+                                         None, Network::Testnet, bitcoin::Blockchain::Bitcoin, db).unwrap();
 
         assert_eq!(
             wallet.get_address(Peek(1)).unwrap().to_string(),
@@ -3850,7 +3881,7 @@ pub(crate) mod test {
     fn test_peek_address_at_index_not_derivable() {
         let db = MemoryDatabase::new();
         let wallet = Wallet::new_offline("wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/1)",
-                                         None, Network::Testnet, db).unwrap();
+                                         None, Network::Testnet, bitcoin::Blockchain::Bitcoin, db).unwrap();
 
         assert_eq!(
             wallet.get_address(Peek(1)).unwrap().to_string(),
@@ -3872,7 +3903,7 @@ pub(crate) mod test {
     fn test_reset_address_index() {
         let db = MemoryDatabase::new();
         let wallet = Wallet::new_offline("wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)",
-                                         None, Network::Testnet, db).unwrap();
+                                         None, Network::Testnet, bitcoin::Blockchain::Bitcoin, db).unwrap();
 
         // new index 0
         assert_eq!(
@@ -3909,7 +3940,7 @@ pub(crate) mod test {
     fn test_returns_index_and_address() {
         let db = MemoryDatabase::new();
         let wallet = Wallet::new_offline("wpkh(tpubEBr4i6yk5nf5DAaJpsi9N2pPYBeJ7fZ5Z9rmN4977iYLCGco1VyjB9tvvuvYtfZzjD5A8igzgw3HeWeeKFmanHYqksqZXYXGsw5zjnj7KM9/*)",
-                                         None, Network::Testnet, db).unwrap();
+                                         None, Network::Testnet, bitcoin::Blockchain::Bitcoin, db).unwrap();
 
         // new index 0
         assert_eq!(

@@ -14,15 +14,12 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 bdk-macros = "0.5"
 log = "^0.4"
-miniscript = "5.1"
-bitcoin = { version = "~0.26.2", features = ["use-serde", "base64"] }
 serde = { version = "^1.0", features = ["derive"] }
 serde_json = { version = "^1.0" }
 rand = "^0.7"
 
 # Optional dependencies
 sled = { version = "0.34", optional = true }
-electrum-client = { version = "0.7", optional = true }
 reqwest = { version = "0.11", optional = true, features = ["json"] }
 ureq = { version = "2.1", default-features = false, features = ["json"], optional = true }
 futures = { version = "0.3", optional = true }
@@ -35,8 +32,28 @@ tiny-bip39 = { version = "^0.8", optional = true }
 zeroize = { version = "<1.4.0", optional = true }
 bitcoinconsensus = { version = "0.19.0-3", optional = true }
 
+[dependencies.bitcoin]
+git = "ssh://git@github.com/tcharding/rust-bitcoin.git"
+features = ["use-serde", "base64"]
+version = "~0.26.2"
+branch = "altcoin-support-v0.26.2"
+
+[dependencies.miniscript]
+git = "ssh://git@github.com/tcharding/rust-miniscript.git"
+version = "5.1"
+branch = "altcoin-support-v5.1.0"
+
 # Needed by bdk_blockchain_tests macro
-bitcoincore-rpc = { version = "0.13", optional = true }
+[dependencies.bitcoincore-rpc]
+git = "ssh://git@github.com/tcharding/rust-bitcoincore-rpc.git"
+optional = true
+branch = "altcoin-support"
+
+[dependencies.electrum-client]
+git = "ssh://git@github.com/tcharding/rust-electrum-client.git"
+optional = true
+version = "0.7"
+branch = "altcoin-support-v0.7"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 async-trait = "0.1"

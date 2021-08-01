@@ -206,7 +206,7 @@ impl WalletExport {
 mod test {
     use std::str::FromStr;
 
-    use bitcoin::{Network, Txid};
+    use bitcoin::{Blockchain, Network, Txid};
 
     use super::*;
     use crate::database::{memory::MemoryDatabase, BatchOperations};
@@ -246,6 +246,7 @@ mod test {
             descriptor,
             Some(change_descriptor),
             Network::Bitcoin,
+            Blockchain::Bitcoin,
             get_test_db(),
         )
         .unwrap();
@@ -266,8 +267,14 @@ mod test {
 
         let descriptor = "wpkh(xprv9s21ZrQH143K4CTb63EaMxja1YiTnSEWKMbn23uoEnAzxjdUJRQkazCAtzxGm4LSoTSVTptoV9RbchnKPW9HxKtZumdyxyikZFDLhogJ5Uj/44'/0'/0'/0/*)";
 
-        let wallet =
-            Wallet::new_offline(descriptor, None, Network::Bitcoin, get_test_db()).unwrap();
+        let wallet = Wallet::new_offline(
+            descriptor,
+            None,
+            Network::Bitcoin,
+            Blockchain::Bitcoin,
+            get_test_db(),
+        )
+        .unwrap();
         WalletExport::export_wallet(&wallet, "Test Label", true).unwrap();
     }
 
@@ -284,6 +291,7 @@ mod test {
             descriptor,
             Some(change_descriptor),
             Network::Bitcoin,
+            Blockchain::Bitcoin,
             get_test_db(),
         )
         .unwrap();
@@ -307,6 +315,7 @@ mod test {
             descriptor,
             Some(change_descriptor),
             Network::Testnet,
+            Blockchain::Bitcoin,
             get_test_db(),
         )
         .unwrap();
@@ -327,6 +336,7 @@ mod test {
             descriptor,
             Some(change_descriptor),
             Network::Bitcoin,
+            Blockchain::Bitcoin,
             get_test_db(),
         )
         .unwrap();

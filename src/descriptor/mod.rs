@@ -21,7 +21,7 @@ use bitcoin::util::bip32::{
     ChildNumber, DerivationPath, ExtendedPrivKey, ExtendedPubKey, Fingerprint, KeySource,
 };
 use bitcoin::util::psbt;
-use bitcoin::{Network, PublicKey, Script, TxOut};
+use bitcoin::{Blockchain, Network, PublicKey, Script, TxOut};
 
 use miniscript::descriptor::{DescriptorPublicKey, DescriptorType, DescriptorXKey, Wildcard};
 pub use miniscript::{descriptor::KeyMap, Descriptor, Legacy, Miniscript, ScriptContext, Segwitv0};
@@ -348,32 +348,33 @@ pub(crate) trait DescriptorMeta {
         psbt_input: &psbt::Input,
         utxo: Option<TxOut>,
         secp: &'s SecpCtx,
+        blockchain: Blockchain,
     ) -> Option<DerivedDescriptor<'s>>;
 }
 
 pub(crate) trait DescriptorScripts {
-    fn psbt_redeem_script(&self) -> Option<Script>;
-    fn psbt_witness_script(&self) -> Option<Script>;
+    fn psbt_redeem_script(&self, _: Blockchain) -> Option<Script>;
+    fn psbt_witness_script(&self, _: Blockchain) -> Option<Script>;
 }
 
 impl<'s> DescriptorScripts for DerivedDescriptor<'s> {
-    fn psbt_redeem_script(&self) -> Option<Script> {
+    fn psbt_redeem_script(&self, blockchain: Blockchain) -> Option<Script> {
         match self.desc_type() {
-            DescriptorType::ShWpkh => Some(self.explicit_script()),
-            DescriptorType::ShWsh => Some(self.explicit_script().to_v0_p2wsh()),
-            DescriptorType::Sh => Some(self.explicit_script()),
-            DescriptorType::Bare => Some(self.explicit_script()),
-            DescriptorType::ShSortedMulti => Some(self.explicit_script()),
+            DescriptorType::ShWpkh => Some(self.explicit_script(blockchain)),
+            DescriptorType::ShWsh => Some(self.explicit_script(blockchain).to_v0_p2wsh()),
+            DescriptorType::Sh => Some(self.explicit_script(blockchain)),
+            DescriptorType::Bare => Some(self.explicit_script(blockchain)),
+            DescriptorType::ShSortedMulti => Some(self.explicit_script(blockchain)),
             _ => None,
         }
     }
 
-    fn psbt_witness_script(&self) -> Option<Script> {
+    fn psbt_witness_script(&self, blockchain: Blockchain) -> Option<Script> {
         match self.desc_type() {
-            DescriptorType::Wsh => Some(self.explicit_script()),
-            DescriptorType::ShWsh => Some(self.explicit_script()),
+            DescriptorType::Wsh => Some(self.explicit_script(blockchain)),
+            DescriptorType::ShWsh => Some(self.explicit_script(blockchain)),
             DescriptorType::WshSortedMulti | DescriptorType::ShWshSortedMulti => {
-                Some(self.explicit_script())
+                Some(self.explicit_script(blockchain))
             }
             _ => None,
         }
@@ -467,6 +468,7 @@ impl DescriptorMeta for ExtendedDescriptor {
         psbt_input: &psbt::Input,
         utxo: Option<TxOut>,
         secp: &'s SecpCtx,
+        blockchain: Blockchain,
     ) -> Option<DerivedDescriptor<'s>> {
         if let Some(derived) = self.derive_from_hd_keypaths(&psbt_input.bip32_derivation, secp) {
             return Some(derived);
@@ -481,13 +483,14 @@ impl DescriptorMeta for ExtendedDescriptor {
             // TODO: add pk() here
             DescriptorType::Pkh | DescriptorType::Wpkh | DescriptorType::ShWpkh
                 if utxo.is_some()
-                    && descriptor.script_pubkey() == utxo.as_ref().unwrap().script_pubkey =>
+                    && descriptor.script_pubkey(blockchain)
+                        == utxo.as_ref().unwrap().script_pubkey =>
             {
                 Some(descriptor)
             }
             DescriptorType::Bare | DescriptorType::Sh | DescriptorType::ShSortedMulti
                 if psbt_input.redeem_script.is_some()
-                    && &descriptor.explicit_script()
+                    && &descriptor.explicit_script(blockchain)
                         == psbt_input.redeem_script.as_ref().unwrap() =>
             {
                 Some(descriptor)
@@ -497,7 +500,7 @@ impl DescriptorMeta for ExtendedDescriptor {
             | DescriptorType::ShWshSortedMulti
             | DescriptorType::WshSortedMulti
                 if psbt_input.witness_script.is_some()
-                    && &descriptor.explicit_script()
+                    && &descriptor.explicit_script(blockchain)
                         == psbt_input.witness_script.as_ref().unwrap() =>
             {
                 Some(descriptor)
@@ -538,6 +541,7 @@ mod test {
     use bitcoin::hashes::hex::FromHex;
     use bitcoin::secp256k1::Secp256k1;
     use bitcoin::util::{bip32, psbt};
+    use bitcoin::Blockchain;
 
     use super::*;
     use crate::psbt::PsbtUtils;
@@ -561,7 +565,12 @@ mod test {
         .unwrap();
 
         assert!(descriptor
-            .derive_from_psbt_input(&psbt.inputs[0], psbt.get_utxo_for(0), &Secp256k1::new())
+            .derive_from_psbt_input(
+                &psbt.inputs[0],
+                psbt.get_utxo_for(0),
+                &Secp256k1::new(),
+                Blockchain::Bitcoin
+            )
             .is_some());
     }
 
@@ -592,7 +601,12 @@ mod test {
         .unwrap();
 
         assert!(descriptor
-            .derive_from_psbt_input(&psbt.inputs[0], psbt.get_utxo_for(0), &Secp256k1::new())
+            .derive_from_psbt_input(
+                &psbt.inputs[0],
+                psbt.get_utxo_for(0),
+                &Secp256k1::new(),
+                Blockchain::Bitcoin
+            )
             .is_some());
     }
 
@@ -616,7 +630,12 @@ mod test {
         .unwrap();
 
         assert!(descriptor
-            .derive_from_psbt_input(&psbt.inputs[0], psbt.get_utxo_for(0), &Secp256k1::new())
+            .derive_from_psbt_input(
+                &psbt.inputs[0],
+                psbt.get_utxo_for(0),
+                &Secp256k1::new(),
+                Blockchain::Bitcoin
+            )
             .is_some());
     }
 
@@ -646,7 +665,12 @@ mod test {
         .unwrap();
 
         assert!(descriptor
-            .derive_from_psbt_input(&psbt.inputs[0], psbt.get_utxo_for(0), &Secp256k1::new())
+            .derive_from_psbt_input(
+                &psbt.inputs[0],
+                psbt.get_utxo_for(0),
+                &Secp256k1::new(),
+                Blockchain::Bitcoin
+            )
             .is_some());
     }
 

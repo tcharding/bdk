@@ -675,7 +675,7 @@ mod test {
     use crate::keys::{DescriptorKey, IntoDescriptorKey, ValidNetworks};
     use bitcoin::network::constants::Network::{Bitcoin, Regtest, Signet, Testnet};
     use bitcoin::util::bip32;
-    use bitcoin::PrivateKey;
+    use bitcoin::{Blockchain, PrivateKey};
 
     use crate::descriptor::derived::AsDerived;
 
@@ -700,11 +700,11 @@ mod test {
             } else {
                 desc.as_derived(index, &secp)
             };
-            let address = child_desc.address(Regtest);
+            let address = child_desc.address(Regtest, Blockchain::Bitcoin);
             if let Ok(address) = address {
                 assert_eq!(address.to_string(), *expected.get(i).unwrap());
             } else {
-                let script = child_desc.script_pubkey();
+                let script = child_desc.script_pubkey(Blockchain::Bitcoin);
                 assert_eq!(script.to_hex().as_str(), *expected.get(i).unwrap());
             }
         }

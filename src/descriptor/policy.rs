@@ -1013,7 +1013,7 @@ mod test {
     use crate::wallet::signer::SignersContainer;
     use bitcoin::secp256k1::Secp256k1;
     use bitcoin::util::bip32;
-    use bitcoin::Network;
+    use bitcoin::{Blockchain, Network};
     use miniscript::DescriptorTrait;
     use std::str::FromStr;
     use std::sync::Arc;
@@ -1465,7 +1465,7 @@ mod test {
 
         let addr = wallet_desc
             .as_derived(0, &secp)
-            .address(Network::Testnet)
+            .address(Network::Testnet, Blockchain::Bitcoin)
             .unwrap();
         assert_eq!(
             "tb1qg3cwv3xt50gdg875qvjjpfgaps86gtk4rz0ejvp6ttc5ldnlxuvqlcn0xk",
@@ -1537,7 +1537,7 @@ mod test {
 
         let addr = wallet_desc
             .as_derived(0, &secp)
-            .address(Network::Testnet)
+            .address(Network::Testnet, Blockchain::Bitcoin)
             .unwrap();
         assert_eq!(
             "tb1qhpemaacpeu8ajlnh8k9v55ftg0px58r8630fz8t5mypxcwdk5d8sum522g",

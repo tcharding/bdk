@@ -463,6 +463,7 @@ mod test {
     use crate::keys::ValidNetworks;
     use bitcoin::network::constants::Network::Regtest;
     use bitcoin::secp256k1::Secp256k1;
+    use bitcoin::Blockchain;
     use miniscript::descriptor::{DescriptorPublicKey, DescriptorTrait, KeyMap};
     use miniscript::Descriptor;
 
@@ -485,7 +486,7 @@ mod test {
             } else {
                 desc.as_derived(index, &secp)
             };
-            let address = child_desc.address(Regtest).unwrap();
+            let address = child_desc.address(Regtest, Blockchain::Bitcoin).unwrap();
             assert_eq!(address.to_string(), *expected.get(i).unwrap());
         }
     }

@@ -31,7 +31,9 @@ use log::{debug, error, info, trace};
 
 use bitcoin::{BlockHeader, Script, Transaction, Txid};
 
-use electrum_client::{Client, ConfigBuilder, ElectrumApi, Socks5Config};
+#[cfg(feature = "proxy")]
+use electrum_client::Socks5Config;
+use electrum_client::{Client, ConfigBuilder, ElectrumApi};
 
 use self::utils::{ElectrumLikeSync, ElsGetHistoryRes};
 use super::*;
@@ -149,6 +151,7 @@ pub struct ElectrumBlockchainConfig {
     /// eg. `ssl://electrum.blockstream.info:60002`
     pub url: String,
     /// URL of the socks5 proxy server or a Tor service
+    #[cfg(feature = "proxy")]
     pub socks5: Option<String>,
     /// Request retry count
     pub retry: u8,
@@ -162,11 +165,24 @@ impl ConfigurableBlockchain for ElectrumBlockchain {
     type Config = ElectrumBlockchainConfig;
 
     fn from_config(config: &Self::Config) -> Result<Self, Error> {
-        let socks5 = config.socks5.as_ref().map(Socks5Config::new);
+        #[cfg(feature = "proxy")]
+        {
+            let socks5 = config.socks5.as_ref().map(Socks5Config::new);
+            let electrum_config = ConfigBuilder::new()
+                .retry(config.retry)
+                .timeout(config.timeout)?
+                .socks5(socks5)?
+                .build();
+
+            return Ok(ElectrumBlockchain {
+                client: Client::from_config(config.url.as_str(), electrum_config)?,
+                stop_gap: config.stop_gap,
+            });
+        }
+
         let electrum_config = ConfigBuilder::new()
             .retry(config.retry)
             .timeout(config.timeout)?
-            .socks5(socks5)?
             .build();
 
         Ok(ElectrumBlockchain {
