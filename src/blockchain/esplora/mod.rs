@@ -29,18 +29,10 @@ use bitcoin::{BlockHash, Txid};
 use crate::error::Error;
 use crate::FeeRate;
 
-#[cfg(all(
-    feature = "esplora",
-    feature = "reqwest",
-    any(feature = "async-interface", target_arch = "wasm32"),
-))]
+#[cfg(all(feature = "esplora", feature = "reqwest",))]
 mod reqwest;
 
-#[cfg(all(
-    feature = "esplora",
-    feature = "reqwest",
-    any(feature = "async-interface", target_arch = "wasm32"),
-))]
+#[cfg(all(feature = "esplora", feature = "reqwest",))]
 pub use self::reqwest::*;
 
 #[cfg(all(
