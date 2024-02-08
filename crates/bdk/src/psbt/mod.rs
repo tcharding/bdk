@@ -13,9 +13,10 @@
 
 use crate::FeeRate;
 use alloc::vec::Vec;
-use bitcoin::{Psbt, TxOut};
+use bitcoin::TxOut;
+use psbt_v2::v0::Psbt;
 
-// TODO upstream the functions here to `rust-bitcoin`?
+// TODO upstream the functions here to `rust-psbt`?
 
 /// Trait to add functions to extract utxos and calculate fees.
 pub trait PsbtUtils {

@@ -49,7 +49,8 @@ use core::fmt;
 use core::marker::PhantomData;
 
 use bitcoin::{absolute, script::PushBytes, OutPoint, ScriptBuf, Sequence, Transaction, Txid};
-use bitcoin::psbt::{self, Psbt};
+use psbt_v2::v0::bitcoin::{self as psbt, Psbt};
+use psbt_v2::PsbtSighashType;
 
 use super::coin_selection::{CoinSelectionAlgorithm, DefaultCoinSelectionAlgorithm};
 use super::ChangeSet;
@@ -146,7 +147,7 @@ pub(crate) struct TxParams {
     pub(crate) utxos: Vec<WeightedUtxo>,
     pub(crate) unspendable: HashSet<OutPoint>,
     pub(crate) manually_selected_only: bool,
-    pub(crate) sighash: Option<psbt::PsbtSighashType>,
+    pub(crate) sighash: Option<PsbtSighashType>,
     pub(crate) ordering: TxOrdering,
     pub(crate) locktime: Option<absolute::LockTime>,
     pub(crate) rbf: Option<RbfValue>,
@@ -469,7 +470,7 @@ impl<'a, D, Cs: CoinSelectionAlgorithm, Ctx: TxBuilderContext> TxBuilder<'a, D, 
     /// Sign with a specific sig hash
     ///
     /// **Use this option very carefully**
-    pub fn sighash(&mut self, sighash: psbt::PsbtSighashType) -> &mut Self {
+    pub fn sighash(&mut self, sighash: PsbtSighashType) -> &mut Self {
         self.params.sighash = Some(sighash);
         self
     }

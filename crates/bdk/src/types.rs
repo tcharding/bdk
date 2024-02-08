@@ -15,7 +15,8 @@ use core::ops::Sub;
 
 use bdk_chain::ConfirmationTime;
 use bitcoin::blockdata::transaction::{OutPoint, Sequence, TxOut};
-use bitcoin::{psbt, Weight};
+use bitcoin::Weight;
+use psbt_v2::v0::bitcoin as psbt;
 
 use serde::{Deserialize, Serialize};
 

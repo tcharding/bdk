@@ -1,5 +1,5 @@
 use bdk::bitcoin::bip32::Fingerprint;
-use bdk::bitcoin::Psbt;
+use bdk::psbt_v2::v0::Psbt;
 use bdk::bitcoin::secp256k1::{All, Secp256k1};
 
 use hwi::error::Error;

@@ -20,8 +20,10 @@ use alloc::vec::Vec;
 
 use bitcoin::bip32::{ChildNumber, DerivationPath, Fingerprint, KeySource, Xpub};
 use bitcoin::{key::XOnlyPublicKey, secp256k1, PublicKey};
-use bitcoin::{psbt, taproot};
+use bitcoin::taproot;
 use bitcoin::{Network, TxOut};
+
+use psbt_v2::v0::bitcoin as psbt;
 
 use miniscript::descriptor::{
     DefiniteDescriptorKey, DescriptorMultiXKey, DescriptorSecretKey, DescriptorType,
@@ -607,7 +609,8 @@ mod test {
     use bitcoin::hex::FromHex;
     use bitcoin::secp256k1::Secp256k1;
     use bitcoin::ScriptBuf;
-    use bitcoin::{bip32, Psbt};
+    use bitcoin::bip32;
+    use psbt_v2::v0::Psbt;
 
     use super::*;
     use crate::psbt::PsbtUtils;
@@ -877,7 +880,7 @@ mod test {
 
     #[test]
     fn test_sh_wsh_sortedmulti_redeemscript() {
-        use miniscript::psbt::PsbtInputExt;
+        use psbt_v2::v0::miniscript::PsbtInputExt;
 
         let secp = Secp256k1::new();
 

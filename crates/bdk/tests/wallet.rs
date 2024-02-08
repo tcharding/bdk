@@ -19,8 +19,9 @@ use bitcoin::{
     absolute, script::PushBytesBuf, taproot::TapNodeHash, transaction, Address, Amount, OutPoint,
     Sequence, Transaction, TxIn, TxOut, Weight,
 };
-use bitcoin::{psbt, Network};
+use bitcoin::Network;
 use bitcoin::{BlockHash, Txid};
+use psbt_v2::v0::bitcoin as psbt;
 
 mod common;
 use common::*;
@@ -2486,7 +2487,7 @@ fn test_signing_only_one_of_multiple_inputs() {
     let mut psbt = builder.finish().unwrap();
 
     // add another input to the psbt that is at least passable.
-    let dud_input = bitcoin::psbt::Input {
+    let dud_input = psbt_v2::v0::Input {
         witness_utxo: Some(TxOut {
             value: Amount::from_sat(100_000),
             script_pubkey: miniscript::Descriptor::<bitcoin::PublicKey>::from_str(

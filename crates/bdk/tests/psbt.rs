@@ -2,7 +2,7 @@ use bdk::bitcoin::TxIn;
 use bdk::wallet::AddressIndex;
 use bdk::wallet::AddressIndex::New;
 use bdk::{psbt, FeeRate, SignOptions};
-use bitcoin::Psbt;
+use psbt_v2::v0::Psbt;
 use core::str::FromStr;
 mod common;
 use common::*;
@@ -162,7 +162,7 @@ fn test_psbt_multiple_internalkey_signers() {
     use bdk::signer::{SignerContext, SignerOrdering, SignerWrapper};
     use bdk::KeychainKind;
     use bitcoin::{secp256k1::Secp256k1, PrivateKey};
-    use miniscript::psbt::PsbtExt;
+    use psbt_v2::v0::miniscript::PsbtExt;
     use std::sync::Arc;
 
     let secp = Secp256k1::new();

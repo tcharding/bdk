@@ -66,8 +66,8 @@ use crate::wallet::utils::{After, Older, SecpCtx};
 use super::checksum::calc_checksum;
 use super::error::Error;
 use super::XKeyUtils;
-use bitcoin::psbt::{self, Psbt};
-use miniscript::psbt::PsbtInputSatisfier;
+use psbt_v2::v0::bitcoin::{self as psbt, Psbt};
+use psbt_v2::v0::miniscript::PsbtInputSatisfier;
 
 /// A unique identifier for a key
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]

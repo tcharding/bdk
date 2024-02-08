@@ -49,11 +49,12 @@
 
 use bitcoin::bip32::Fingerprint;
 use bitcoin::secp256k1::{All, Secp256k1};
-use bitcoin::Psbt;
 
 use hwi::error::Error;
 use hwi::types::{HWIChain, HWIDevice};
 use hwi::HWIClient;
+
+use psbt_v2::v0::Psbt;
 
 use crate::signer::{SignerCommon, SignerError, SignerId, TransactionSigner};
 

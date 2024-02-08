@@ -90,15 +90,18 @@ use bitcoin::bip32::{ChildNumber, DerivationPath, Fingerprint, Xpriv};
 use bitcoin::hashes::hash160;
 use bitcoin::secp256k1::Message;
 use bitcoin::sighash::{EcdsaSighashType, TapSighash, TapSighashType};
-use bitcoin::{ecdsa, psbt, sighash, taproot};
+use bitcoin::{ecdsa, sighash, taproot};
 use bitcoin::{key::TapTweak, key::XOnlyPublicKey, secp256k1};
-use bitcoin::{PrivateKey, Psbt, PublicKey};
+use bitcoin::{PrivateKey, PublicKey};
 
 use miniscript::descriptor::{
     Descriptor, DescriptorMultiXKey, DescriptorPublicKey, DescriptorSecretKey, DescriptorXKey,
     InnerXKey, KeyMap, SinglePriv, SinglePubKey,
 };
 use miniscript::{Legacy, Segwitv0, SigType, Tap, ToPublicKey};
+
+use psbt_v2::v0::bitcoin::{self as psbt, Psbt};
+use psbt_v2::PsbtSighashType;
 
 use super::utils::SecpCtx;
 use crate::descriptor::{DescriptorMeta, XKeyUtils};
@@ -1003,7 +1006,7 @@ impl ComputeSighash for Tap {
         let mut all_witness_utxos = vec![];
 
         let mut cache = sighash::SighashCache::new(&psbt.unsigned_tx);
-        let is_anyone_can_pay = psbt::PsbtSighashType::from(sighash_type).to_u32() & 0x80 != 0;
+        let is_anyone_can_pay = PsbtSighashType::from(sighash_type).to_u32() & 0x80 != 0;
         let prevouts = if is_anyone_can_pay {
             sighash::Prevouts::One(
                 input_index,

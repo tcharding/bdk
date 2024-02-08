@@ -22,3 +22,11 @@ members = [
 
 [workspace.package]
 authors = ["Bitcoin Dev Kit Developers"]
+
+# Remove this once 0.1.0-beta.2 is out.
+[patch.crates-io.psbt-v2]
+path = "../../rust-psbt/master"
+
+# Remove this once 0.1.0-beta.2 is out.
+[patch.crates-io.hwi]
+path = "../../rust-hwi/dev-test-psbt-v2-beta-release"

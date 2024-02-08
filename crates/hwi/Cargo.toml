@@ -10,4 +10,4 @@ readme = "README.md"
 
 [dependencies]
 bdk = { path = "../bdk" }
-hwi = { version = "0.7.0", features = [ "miniscript"], path = "../../../../rust-hwi/master" }
+hwi = { version = "0.7.0", features = [ "miniscript"], path = "../../../../rust-hwi/dev-test-psbt-v2-beta-release" }

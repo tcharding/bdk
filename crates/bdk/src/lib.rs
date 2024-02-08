@@ -17,6 +17,7 @@ extern crate std;
 pub extern crate alloc;
 
 pub extern crate bitcoin;
+pub extern crate psbt_v2;
 pub extern crate miniscript;
 extern crate serde;
 extern crate serde_json;

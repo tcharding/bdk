@@ -16,6 +16,7 @@ rust-version = "1.63"
 rand = "^0.8"
 miniscript = { version = "11.0.0", features = ["serde"], default-features = false }
 bitcoin = { version = "0.31.0", features = ["serde", "base64", "rand-std"], default-features = false }
+psbt-v2 = { version = "0.1.0-beta.1", features = ["miniscript-std", "serde", "base64"] }
 serde = { version = "^1.0", features = ["derive"] }
 serde_json = { version = "^1.0" }
 bdk_chain = { path = "../chain", version = "0.9.0", features = ["miniscript", "serde"], default-features = false }

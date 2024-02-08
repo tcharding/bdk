@@ -16,8 +16,9 @@ use crate::descriptor::DescriptorError;
 use crate::wallet::coin_selection;
 use crate::{descriptor, FeeRate, KeychainKind};
 use alloc::string::String;
-use bitcoin::{absolute, psbt, OutPoint, Sequence, Txid};
+use bitcoin::{absolute, OutPoint, Sequence, Txid};
 use core::fmt;
+use psbt_v2::v0::bitcoin as psbt;
 
 /// Errors returned by miniscript when updating inconsistent PSBTs
 #[derive(Debug, Clone)]
@@ -25,9 +26,9 @@ pub enum MiniscriptPsbtError {
     /// Descriptor key conversion error
     Conversion(miniscript::descriptor::ConversionError),
     /// Return error type for PsbtExt::update_input_with_descriptor
-    UtxoUpdate(miniscript::psbt::UtxoUpdateError),
+    UtxoUpdate(psbt_v2::v0::miniscript::UtxoUpdateError),
     /// Return error type for PsbtExt::update_output_with_descriptor
-    OutputUpdate(miniscript::psbt::OutputUpdateError),
+    OutputUpdate(psbt_v2::v0::miniscript::OutputUpdateError),
 }
 
 impl fmt::Display for MiniscriptPsbtError {

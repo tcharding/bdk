@@ -33,15 +33,17 @@ use bdk_chain::{
 use bitcoin::secp256k1::{All, Secp256k1};
 use bitcoin::sighash::{EcdsaSighashType, TapSighashType};
 use bitcoin::{
-    absolute, psbt, Address, Block, Network, OutPoint, Script, ScriptBuf, Sequence, Transaction, TxOut,
+    absolute, Address, Block, Network, OutPoint, Script, ScriptBuf, Sequence, Transaction, TxOut,
     Txid, Weight, Witness,
 };
-use bitcoin::{transaction, consensus::encode::serialize, Amount, BlockHash, Psbt};
+use bitcoin::{transaction, consensus::encode::serialize, Amount, BlockHash};
 use bitcoin::constants::genesis_block;
 use core::fmt;
 use core::ops::Deref;
 use descriptor::error::Error as DescriptorError;
-use miniscript::psbt::{PsbtExt, PsbtInputExt, PsbtInputSatisfier};
+use psbt_v2::v0::miniscript::{PsbtExt, PsbtInputExt, PsbtInputSatisfier};
+use psbt_v2::v0::{bitcoin as psbt, Psbt};
+use psbt_v2::PsbtSighashType;
 
 use bdk_chain::tx_graph::CalculateFeeError;
 
@@ -946,7 +948,7 @@ impl<D> Wallet<D> {
     /// ```
     ///
     /// ```rust, no_run
-    /// # use bitcoin::Psbt;
+    /// # use psbt_v2::v0::Psbt;
     /// # use bdk::Wallet;
     /// # let mut wallet: Wallet<()> = todo!();
     /// # let mut psbt: Psbt = todo!();
@@ -977,7 +979,7 @@ impl<D> Wallet<D> {
     /// ```
     ///
     /// ```rust, no_run
-    /// # use bitcoin::Psbt;
+    /// # use psbt_v2::v0::Psbt;
     /// # use bdk::Wallet;
     /// # let mut wallet: Wallet<()> = todo!();
     /// # let mut psbt: Psbt = todo!();
@@ -1010,7 +1012,7 @@ impl<D> Wallet<D> {
     /// ```
     ///
     /// ```rust, no_run
-    /// # use bitcoin::Psbt;
+    /// # use psbt_v2::v0::Psbt;
     /// # use bdk::Wallet;
     /// # let mut wallet: Wallet<()> = todo!();
     /// # let mut psbt: Psbt = todo!();
@@ -2249,7 +2251,7 @@ impl<D> Wallet<D> {
     pub fn get_psbt_input(
         &self,
         utxo: LocalOutput,
-        sighash_type: Option<psbt::PsbtSighashType>,
+        sighash_type: Option<PsbtSighashType>,
         only_witness_utxo: bool,
     ) -> Result<psbt::Input, CreateTxError<D::WriteError>>
     where
